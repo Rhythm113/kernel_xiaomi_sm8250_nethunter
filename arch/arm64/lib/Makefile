@@ -23,6 +23,7 @@ obj-$(CONFIG_ARM64_LSE_ATOMICS) += atomic_ll_sc.o
 else
 lib-$(CONFIG_ARM64_LSE_ATOMICS) += atomic_ll_sc.o
 endif
+CFLAGS_lib := -fPIC
 CFLAGS_atomic_ll_sc.o	:= -ffixed-x1 -ffixed-x2        		\
 		   -ffixed-x3 -ffixed-x4 -ffixed-x5 -ffixed-x6		\
 		   -ffixed-x7 -fcall-saved-x8 -fcall-saved-x9		\
@@ -34,6 +35,7 @@ GCOV_PROFILE_atomic_ll_sc.o	:= n
 KASAN_SANITIZE_atomic_ll_sc.o	:= n
 KCOV_INSTRUMENT_atomic_ll_sc.o	:= n
 UBSAN_SANITIZE_atomic_ll_sc.o	:= n
+
 
 lib-$(CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE) += uaccess_flushcache.o
 

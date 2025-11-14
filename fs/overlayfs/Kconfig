@@ -7,7 +7,6 @@ config OVERLAY_FS
 	  object in the 'upper' filesystem is visible while the object in the
 	  'lower' filesystem is either hidden or, in the case of directories,
 	  merged with the 'upper' object.
-
 	  For more information see Documentation/filesystems/overlayfs.txt
 
 config OVERLAY_FS_REDIRECT_DIR
