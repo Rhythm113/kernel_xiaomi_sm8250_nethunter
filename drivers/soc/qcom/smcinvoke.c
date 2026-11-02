@@ -20,6 +20,7 @@
 #include <linux/dma-buf.h>
 #include <linux/kref.h>
 #include <linux/signal.h>
+#include <linux/overflow.h>
 
 #include <soc/qcom/scm.h>
 #include <asm/cacheflush.h>
@@ -555,15 +556,6 @@ static struct smcinvoke_cb_txn *find_cbtxn_locked(
 		}
 	}
 	return NULL;
-}
-
-/*
- * size_add saturates at SIZE_MAX. If integer overflow is detected,
- * this function would return SIZE_MAX otherwise normal a+b is returned.
- */
-static inline size_t size_add(size_t a, size_t b)
-{
-	return (b > (SIZE_MAX - a)) ? SIZE_MAX : a + b;
 }
 
 /*
