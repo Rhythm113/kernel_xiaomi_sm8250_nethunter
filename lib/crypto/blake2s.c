@@ -16,7 +16,11 @@
 #include <linux/init.h>
 #include <linux/bug.h>
 
-#if IS_ENABLED(CONFIG_CRYPTO_ARCH_HAVE_LIB_BLAKE2S)
+/*
+ * This library is always built in, since it is used by the /dev/random
+ * driver, so it may only use an arch implementation that is also built in.
+ */
+#if IS_BUILTIN(CONFIG_CRYPTO_ARCH_HAVE_LIB_BLAKE2S)
 #  define blake2s_compress blake2s_compress_arch
 #else
 #  define blake2s_compress blake2s_compress_generic
