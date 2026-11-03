@@ -297,10 +297,10 @@ static long madvise_willneed(struct vm_area_struct *vma,
 	get_file(file);
 	offset = (loff_t)(start - vma->vm_start)
 			+ ((loff_t)vma->vm_pgoff << PAGE_SHIFT);
-	up_read(&mm->mmap_sem);
+	mmap_read_unlock(mm);
 	vfs_fadvise(file, offset, end - start, POSIX_FADV_WILLNEED);
 	fput(file);
-	down_read(&mm->mmap_sem);
+	mmap_read_lock(mm);
 	return 0;
 }
 
@@ -726,32 +726,34 @@ static const struct mm_walk_ops madvise_free_walk_ops = {
 static int madvise_free_single_vma(struct vm_area_struct *vma,
 			unsigned long start_addr, unsigned long end_addr)
 {
-	unsigned long start, end;
 	struct mm_struct *mm = vma->vm_mm;
+	struct mmu_notifier_range range;
 	struct mmu_gather tlb;
 
 	/* MADV_FREE works for only anon vma at the moment */
 	if (!vma_is_anonymous(vma))
 		return -EINVAL;
 
-	start = max(vma->vm_start, start_addr);
-	if (start >= vma->vm_end)
+	range.start = max(vma->vm_start, start_addr);
+	if (range.start >= vma->vm_end)
 		return -EINVAL;
-	end = min(vma->vm_end, end_addr);
-	if (end <= vma->vm_start)
+	range.end = min(vma->vm_end, end_addr);
+	if (range.end <= vma->vm_start)
 		return -EINVAL;
+	mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0, vma, mm,
+				range.start, range.end);
 
 	lru_add_drain();
-	tlb_gather_mmu(&tlb, mm, start, end);
+	tlb_gather_mmu(&tlb, mm, range.start, range.end);
 	update_hiwater_rss(mm);
 
-	mmu_notifier_invalidate_range_start(mm, start, end);
+	mmu_notifier_invalidate_range_start(&range);
 	tlb_start_vma((&tlb), vma);
-	walk_page_range(vma->vm_mm, start, end,
+	walk_page_range(vma->vm_mm, range.start, range.end,
 					&madvise_free_walk_ops, &tlb);
 	tlb_end_vma((&tlb), vma);
-	mmu_notifier_invalidate_range_end(mm, start, end);
-	tlb_finish_mmu(&tlb, start, end);
+	mmu_notifier_invalidate_range_end(&range);
+	tlb_finish_mmu(&tlb, range.start, range.end);
 
 	return 0;
 }
@@ -796,7 +798,7 @@ static long madvise_dontneed_free(struct vm_area_struct *vma,
 	if (!userfaultfd_remove(vma, start, end)) {
 		*prev = NULL; /* mmap_sem has been dropped, prev is stale */
 
-		down_read(&mm->mmap_sem);
+		mmap_read_lock(mm);
 		vma = find_vma(mm, start);
 		if (!vma)
 			return -ENOMEM;
@@ -879,13 +881,13 @@ static long madvise_remove(struct vm_area_struct *vma,
 	get_file(f);
 	if (userfaultfd_remove(vma, start, end)) {
 		/* mmap_sem was not released by userfaultfd_remove() */
-		up_read(&mm->mmap_sem);
+		mmap_read_unlock(mm);
 	}
 	error = vfs_fallocate(f,
 				FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 				offset, end - start);
 	fput(f);
-	down_read(&mm->mmap_sem);
+	mmap_read_lock(mm);
 	return error;
 }
 
@@ -1134,7 +1136,7 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 
 	write = madvise_need_mmap_write(behavior);
 	if (write) {
-		if (down_write_killable(&mm->mmap_sem))
+		if (mmap_write_lock_killable(mm))
 			return -EINTR;
 
 		/*
@@ -1150,11 +1152,11 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 		 * model.
 		 */
 		if (!mmget_still_valid(mm)) {
-			up_write(&mm->mmap_sem);
+			mmap_write_unlock(mm);
 			return -EINTR;
 		}
 	} else {
-		down_read(&mm->mmap_sem);
+		mmap_read_lock(mm);
 	}
 
 	/*
@@ -1204,9 +1206,9 @@ int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int beh
 out:
 	blk_finish_plug(&plug);
 	if (write)
-		up_write(&mm->mmap_sem);
+		mmap_write_unlock(mm);
 	else
-		up_read(&mm->mmap_sem);
+		mmap_read_unlock(mm);
 
 	return error;
 }

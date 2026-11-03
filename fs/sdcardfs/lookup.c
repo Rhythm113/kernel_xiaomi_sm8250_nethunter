@@ -260,6 +260,7 @@ static struct dentry *__sdcardfs_lookup(struct dentry *dentry,
 	struct dentry *lower_dentry;
 	const struct qstr *name;
 	struct path lower_path;
+	struct qstr dname;
 	struct dentry *ret_dentry = NULL;
 	struct sdcardfs_sb_info *sbi;
 
@@ -319,7 +320,6 @@ static struct dentry *__sdcardfs_lookup(struct dentry *dentry,
 
 	/* no error: handle positive dentries */
 	if (!err) {
-found:
 		/* check if the dentry is an obb dentry
 		 * if true, the lower_inode must be replaced with
 		 * the inode of the graft path
@@ -367,35 +367,37 @@ err:
 	if (err && err != -ENOENT)
 		goto out;
 
-	/* get a (very likely) new negative dentry */
-	lower_dentry = lookup_one_len_unlocked(name->name,
-					       lower_dir_dentry, name->len);
-	if (IS_ERR(lower_dentry)) {
-		err = PTR_ERR(lower_dentry);
+	/* instatiate a new negative dentry */
+	dname.name = name->name;
+	dname.len = name->len;
+
+	/* See if the low-level filesystem might want
+	 * to use its own hash
+	 */
+	lower_dentry = d_hash_and_lookup(lower_dir_dentry, &dname);
+	if (IS_ERR(lower_dentry))
+		return lower_dentry;
+
+	if (!lower_dentry) {
+		/* We called vfs_path_lookup earlier, and did not get a negative
+		 * dentry then. Don't confuse the lower filesystem by forcing
+		 * one on it now...
+		 */
+		err = -ENOENT;
 		goto out;
 	}
 
 	lower_path.dentry = lower_dentry;
 	lower_path.mnt = mntget(lower_dir_mnt);
-
-	/*
-	 * Check if someone sneakily filled in the dentry when
-	 * we weren't looking. We'll check again in create.
-	 */
-	if (unlikely(d_inode_rcu(lower_dentry))) {
-		err = 0;
-		goto found;
-	}
-
 	sdcardfs_set_lower_path(dentry, &lower_path);
 
 	/*
-	 * If the intent is to create a file, then don't return an error, so
-	 * the VFS will continue the process of making this negative dentry
-	 * into a positive one.
+	 * Return a negative dentry rather than an error, so the VFS can
+	 * make it positive on create and stacked filesystems (fuse-bpf)
+	 * that look up through lookup_one_len2() get a usable dentry.
+	 * d_revalidate drops it once the lower dentry turns positive.
 	 */
-	if (flags & (LOOKUP_CREATE|LOOKUP_RENAME_TARGET))
-		err = 0;
+	err = 0;
 
 out:
 	if (err)

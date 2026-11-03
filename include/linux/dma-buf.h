@@ -53,6 +53,15 @@ struct dma_buf_attachment;
  */
 struct dma_buf_ops {
 	/**
+	  * @cache_sgt_mapping:
+	  *
+	  * If true the framework will cache the first mapping made for each
+	  * attachment. This avoids creating mappings for attachments multiple
+	  * times.
+	  */
+	bool cache_sgt_mapping;
+
+	/**
 	 * @attach:
 	 *
 	 * This is called from dma_buf_attach() to make sure that a given
@@ -409,10 +418,9 @@ typedef int (*dma_buf_destructor)(struct dma_buf *dmabuf, void *dtor_data);
  * @vmapping_counter: used internally to refcnt the vmaps
  * @vmap_ptr: the current vmap ptr if vmapping_counter > 0
  * @exp_name: name of the exporter; useful for debugging.
- * @buf_name: unique name for the buffer
- * @ktime: time (in jiffies) at which the buffer was born
  * @name: userspace-provided name; useful for accounting and debugging.
  * @name_lock: lock to protect name.
+ * @ktime: time (in jiffies) at which the buffer was born
  * @owner: pointer to exporter module; used for refcounting when exporter is a
  *         kernel module.
  * @list_node: node for dma_buf accounting and debugging.
@@ -421,6 +429,7 @@ typedef int (*dma_buf_destructor)(struct dma_buf *dmabuf, void *dtor_data);
  * @poll: for userspace poll support
  * @cb_excl: for userspace poll support
  * @cb_shared: for userspace poll support
+ * @sysfs_entry: for exposing information about this buffer in sysfs.
  *
  * This represents a shared buffer, created by calling dma_buf_export(). The
  * userspace representation is a normal file descriptor, which can be created by
@@ -440,10 +449,11 @@ struct dma_buf {
 	unsigned vmapping_counter;
 	void *vmap_ptr;
 	const char *exp_name;
-	char *buf_name;
-	ktime_t ktime;
 	const char *name;
-	spinlock_t name_lock;
+	spinlock_t name_lock; /* spinlock to protect name access */
+#if defined(CONFIG_DEBUG_FS)
+	ktime_t ktime;
+#endif
 	struct module *owner;
 	struct list_head list_node;
 	void *priv;
@@ -465,6 +475,13 @@ struct dma_buf {
 	atomic_t dent_count;
 
 	bool from_kmem;
+#ifdef CONFIG_DMABUF_SYSFS_STATS
+	/* for sysfs stats */
+	struct dma_buf_sysfs_entry {
+		struct kobject kobj;
+		struct dma_buf *dmabuf;
+	} *sysfs_entry;
+#endif
 };
 
 /**
@@ -472,6 +489,8 @@ struct dma_buf {
  * @dmabuf: buffer for this attachment.
  * @dev: device attached to the buffer.
  * @node: list of dma_buf_attachment.
+ * @sgt: cached mapping.
+ * @dir: direction of cached mapping.
  * @priv: exporter specific attachment data.
  * @dma_map_attrs: DMA attributes to be used when the exporter maps the buffer
  * through dma_buf_map_attachment.
@@ -489,8 +508,17 @@ struct dma_buf_attachment {
 	struct dma_buf *dmabuf;
 	struct device *dev;
 	struct list_head node;
+	struct sg_table *sgt;
+	enum dma_data_direction dir;
 	void *priv;
 	unsigned long dma_map_attrs;
+#ifdef CONFIG_DMABUF_SYSFS_STATS
+	/* for sysfs stats */
+	struct dma_buf_attach_sysfs_entry {
+		struct kobject kobj;
+		unsigned int map_counter;
+	} *sysfs_entry;
+#endif
 };
 
 /**
@@ -542,6 +570,7 @@ static inline void get_dma_buf(struct dma_buf *dmabuf)
 	dma_buf_ref_mod(dmabuf, 1);
 }
 
+int is_dma_buf_file(struct file *file);
 struct dma_buf_attachment *dma_buf_attach(struct dma_buf *dmabuf,
 							struct device *dev);
 void dma_buf_detach(struct dma_buf *dmabuf,

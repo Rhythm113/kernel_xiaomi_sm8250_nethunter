@@ -69,6 +69,8 @@
 #define AID_SDCARD_AV     1034	/* external storage audio/video access */
 #define AID_SDCARD_ALL    1035	/* access all users external storage */
 #define AID_MEDIA_OBB     1059  /* obb files */
+#define AID_EXT_DATA_RW   1078  /* app-private data directories */
+#define AID_EXT_OBB_RW    1079  /* app OBB directories */
 
 #define AID_SDCARD_IMAGE  1057
 
@@ -151,8 +153,6 @@ extern struct inode *sdcardfs_iget(struct super_block *sb,
 				 struct inode *lower_inode, userid_t id);
 extern int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
 			    struct path *lower_path, userid_t id);
-extern int sdcardfs_on_fscrypt_key_removed(struct notifier_block *nb,
-					   unsigned long action, void *data);
 
 /* file private data */
 struct sdcardfs_file_info {
@@ -169,6 +169,7 @@ struct sdcardfs_inode_data {
 	uid_t d_uid;
 	bool under_android;
 	bool under_cache;
+	bool under_data;
 	bool under_obb;
 };
 
@@ -203,11 +204,17 @@ struct sdcardfs_mount_options {
 	bool unshared_obb;
 	unsigned int reserved_mb;
 	bool nocache;
+	bool debug;
 };
 
 struct sdcardfs_vfsmount_options {
 	gid_t gid;
 	mode_t mask;
+};
+
+struct sdcardfs_context_options {
+	struct sdcardfs_mount_options opts;
+	struct sdcardfs_vfsmount_options vfsopts;
 };
 
 extern int parse_options_remount(struct super_block *sb, char *options, int silent,
@@ -226,7 +233,6 @@ struct sdcardfs_sb_info {
 	struct path obbpath;
 	void *pkgl_id;
 	struct list_head list;
-	struct notifier_block fscrypt_nb;
 };
 
 /*
@@ -412,6 +418,19 @@ static inline int get_gid(struct vfsmount *mnt,
 	struct sdcardfs_vfsmount_options *vfsopts = mnt->data;
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(sb);
 
+	/*
+	 * Outside the default view, mirror the native layout vold creates
+	 * when sdcardfs isn't used: Android/{data,obb} and the app dirs in
+	 * them belong to ext_data_rw/ext_obb_rw rather than to a GID every
+	 * app has. fuse-bpf relies on this to isolate app-private dirs.
+	 */
+	if (vfsopts->gid != AID_SDCARD_RW) {
+		if (data->under_data)
+			return AID_EXT_DATA_RW;
+		if (data->under_obb)
+			return AID_EXT_OBB_RW;
+	}
+
 	if (vfsopts->gid == AID_SDCARD_RW && !sbi->options.default_normal)
 		/* As an optimization, certain trusted system components only run
 		 * as owner but operate across all users. Since we're now handing
@@ -448,6 +467,12 @@ static inline int get_mode(struct vfsmount *mnt,
 			visible_mode = visible_mode & ~0006;
 		else
 			visible_mode = visible_mode & ~0007;
+
+		/* Let apps traverse to their own dirs, as on native layouts */
+		if (opts->gid != AID_SDCARD_RW &&
+		    (data->perm == PERM_ANDROID_DATA ||
+		     data->perm == PERM_ANDROID_OBB))
+			visible_mode |= 0001;
 	}
 	owner_mode = info->lower_inode->i_mode & 0700;
 	filtered_mode = visible_mode & (owner_mode | (owner_mode >> 3) | (owner_mode >> 6));

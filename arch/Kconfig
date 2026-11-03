@@ -252,6 +252,10 @@ config ARCH_HAS_SET_MEMORY
 config ARCH_HAS_CPU_FINALIZE_INIT
 	bool
 
+# Select if arch has all set_direct_map_invalid/default() functions
+config ARCH_HAS_SET_DIRECT_MAP
+	bool
+
 # Select if arch init_task must go in the __init_task_data section
 config ARCH_TASK_STRUCT_ON_STACK
        bool
@@ -361,6 +365,9 @@ config HAVE_PERF_USER_STACK_DUMP
 	  architectures.
 
 config HAVE_ARCH_JUMP_LABEL
+	bool
+
+config HAVE_ARCH_JUMP_LABEL_RELATIVE
 	bool
 
 config HAVE_RCU_TABLE_FREE
@@ -953,7 +960,7 @@ config VMAP_STACK
 	default y
 	bool "Use a virtually-mapped stack"
 	depends on HAVE_ARCH_VMAP_STACK && !KASAN
-	---help---
+	help
 	  Enable this if you want the use virtually-mapped kernel stacks
 	  with guard pages.  This causes kernel stack overflows to be
 	  caught immediately rather than causing difficult-to-diagnose
@@ -1051,6 +1058,15 @@ config PANIC_ON_REFCOUNT_ERROR
 
 config ARCH_USE_MEMREMAP_PROT
 	bool
+
+config ARCH_HAS_NONLEAF_PMD_YOUNG
+	bool
+	depends on PGTABLE_LEVELS > 2
+	help
+	  Architectures that select this option are capable of setting the
+	  accessed bit in non-leaf PMD entries when using them as part of linear
+	  address translations. Page table walkers that clear the accessed bit
+	  may use this capability to reduce their search space.
 
 config ARCH_HAS_NONLEAF_PMD_YOUNG
 	bool

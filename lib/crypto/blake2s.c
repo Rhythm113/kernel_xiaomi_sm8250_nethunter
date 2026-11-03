@@ -16,26 +16,16 @@
 #include <linux/init.h>
 #include <linux/bug.h>
 
-/*
- * This library is always built in, since it is used by the /dev/random
- * driver, so it may only use an arch implementation that is also built in.
- */
-#if IS_BUILTIN(CONFIG_CRYPTO_ARCH_HAVE_LIB_BLAKE2S)
-#  define blake2s_compress blake2s_compress_arch
-#else
-#  define blake2s_compress blake2s_compress_generic
-#endif
-
 void blake2s_update(struct blake2s_state *state, const u8 *in, size_t inlen)
 {
-	__blake2s_update(state, in, inlen, blake2s_compress);
+	__blake2s_update(state, in, inlen, false);
 }
 EXPORT_SYMBOL(blake2s_update);
 
 void blake2s_final(struct blake2s_state *state, u8 *out)
 {
 	WARN_ON(IS_ENABLED(DEBUG) && !out);
-	__blake2s_final(state, out, blake2s_compress);
+	__blake2s_final(state, out, false);
 	memzero_explicit(state, sizeof(*state));
 }
 EXPORT_SYMBOL(blake2s_final);

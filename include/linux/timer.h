@@ -179,19 +179,19 @@ extern void timer_quiesce_cpu(void *cpup);
 extern void add_timer(struct timer_list *timer);
 
 extern int try_to_del_timer_sync(struct timer_list *timer);
-extern int timer_delete_sync(struct timer_list *timer);
+
+extern int del_timer_sync(struct timer_list *timer);
 
 /**
- * del_timer_sync - Delete a pending timer and wait for a running callback
+ * timer_delete_sync - Delete a pending timer and wait for a running callback
  * @timer:	The timer to be deleted
  *
- * See timer_delete_sync() for detailed explanation.
- *
- * Do not use in new code. Use timer_delete_sync() instead.
+ * Alias of del_timer_sync(), which kernel/time/timer.c implements (the
+ * Android/Lineage tree keeps the del_timer_sync() name for ABI reasons).
  */
-static inline int del_timer_sync(struct timer_list *timer)
+static inline int timer_delete_sync(struct timer_list *timer)
 {
-	return timer_delete_sync(timer);
+	return del_timer_sync(timer);
 }
 
 #define del_singleshot_timer_sync(t) del_timer_sync(t)
@@ -205,8 +205,7 @@ struct ctl_table;
 
 extern unsigned int sysctl_timer_migration;
 int timer_migration_handler(struct ctl_table *table, int write,
-			    void __user *buffer, size_t *lenp,
-			    loff_t *ppos);
+			    void *buffer, size_t *lenp, loff_t *ppos);
 #endif
 
 unsigned long __round_jiffies(unsigned long j, int cpu);
